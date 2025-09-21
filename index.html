@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App de Checklist com Relatório e Pesquisa</title>
+    <!-- Incluindo Tailwind CSS para um design moderno e responsivo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Ícones para os botões -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        /* Estilo customizado para o corpo da página e a fonte Inter */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Estilo para a transição suave de altura ao exibir a caixa de texto */
+        .description-area {
+            transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+        }
+        .description-area.visible {
+            max-height: 200px; /* Altura máxima esperada */
+            opacity: 1;
+        }
+
+        /* Estilos específicos para a impressão */
+        @media print {
+            /* Esconde o aplicativo principal e mostra apenas a área de impressão */
+            body {
+                background-color: #fff;
+            }
+            #app-container {
+                display: none;
+            }
+            #print-area {
+                display: block;
+                box-shadow: none;
+                border: none;
+                width: 100%;
+                max-width: 100%;
+            }
+             /* Garante que os links não sejam impressos */
+            .print-hidden-link {
+                display: none;
+            }
+            /* Evita que os itens do relatório quebrem entre páginas */
+            .report-item {
+                page-break-inside: avoid;
+            }
+             /* Estilos mais simples para os status na impressão */
+            .print-status {
+                padding: 2px 8px;
+                border-radius: 4px;
+                font-weight: bold;
+                color: #000;
+            }
+            .print-status-ok { background-color: #d1fae5 !important; border: 1px solid #10b981; }
+            .print-status-not-ok { background-color: #fee2e2 !important; border: 1px solid #ef4444; }
+            .print-status-pending { background-color: #f3f4f6 !important; border: 1px solid #9ca3af; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 flex items-center justify-center min-h-screen p-4">
+
+    <!-- Container do App Principal -->
+    <main id="app-container" class="w-full max-w-2xl bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 md:p-8">
+        
+        <header class="mb-6">
+            <div class="text-center">
+                <h1 class="text-3xl md:text-4xl font-bold text-indigo-600 dark:text-indigo-400">Controle de Itens</h1>
+                <p class="text-gray-500 dark:text-gray-400 mt-2">Adicione, verifique e anote os problemas.</p>
+            </div>
+            <!-- Botão de Impressão -->
+            <div class="mt-6 text-center">
+                 <button id="printReportBtn" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-5 rounded-lg shadow-md transition transform hover:scale-105">
+                    <i class="fas fa-print mr-2"></i> Imprimir Relatório
+                </button>
+            </div>
+        </header>
+
+        <!-- Barra de Pesquisa e Formulário -->
+        <div class="my-6 border-t border-gray-200 dark:border-gray-700 pt-6 space-y-6">
+             <!-- Barra de Pesquisa -->
+            <div>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3">
+                        <i class="fas fa-search text-gray-400"></i>
+                    </span>
+                    <input type="text" id="searchInput" placeholder="Pesquisar itens..." class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg py-3 pl-10 pr-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition">
+                </div>
+            </div>
+            <!-- Formulário para adicionar novos itens -->
+            <div class="flex flex-col sm:flex-row gap-3">
+                <input type="text" id="newItemInput" placeholder="Digite um novo item do checklist..." class="flex-grow bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition">
+                <button id="addItemBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition transform hover:scale-105">
+                    <i class="fas fa-plus mr-2"></i> Adicionar Item
+                </button>
+            </div>
+        </div>
+
+        <!-- Lista de itens do checklist -->
+        <div id="checklist" class="space-y-4">
+            <!-- Itens do checklist serão inseridos aqui via JavaScript -->
+        </div>
+        
+        <!-- Mensagem para quando não houver itens -->
+        <div id="emptyState" class="hidden text-center py-10 px-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+             <!-- O conteúdo aqui é dinâmico via JS -->
+        </div>
+    </main>
+
+    <!-- Área de Impressão (oculta por padrão) -->
+    <div id="print-area" class="w-full max-w-4xl bg-white rounded-lg p-8 hidden">
+        <!-- Conteúdo do relatório será gerado aqui -->
+    </div>
+
+    <script>
+        // Elementos do DOM
+        const newItemInput = document.getElementById('newItemInput');
+        const addItemBtn = document.getElementById('addItemBtn');
+        const checklistContainer = document.getElementById('checklist');
+        const emptyState = document.getElementById('emptyState');
+        const printReportBtn = document.getElementById('printReportBtn');
+        const printArea = document.getElementById('print-area');
+        const searchInput = document.getElementById('searchInput');
+
+        // Chave para o armazenamento local
+        const LOCAL_STORAGE_KEY = 'checklistApp.items';
+
+        // Carrega os itens do localStorage ou inicializa com um array vazio
+        let items = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) || [];
+
+        // --- Funções de Lógica ---
+
+        /**
+         * Salva o estado atual dos itens no localStorage.
+         */
+        function saveItems() {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items));
+        }
+
+        /**
+         * Renderiza (desenha) todos os itens do checklist na tela, aplicando o filtro de pesquisa.
+         */
+        function renderChecklist() {
+            checklistContainer.innerHTML = '';
+
+            const searchTerm = searchInput.value.toLowerCase();
+            const filteredItems = items.filter(item => item.text.toLowerCase().includes(searchTerm));
+
+            // Controla a visibilidade do botão de impressão com base no número total de itens
+            if (items.length === 0) {
+                printReportBtn.classList.add('hidden');
+            } else {
+                printReportBtn.classList.remove('hidden');
+            }
+
+            // Lógica para renderizar a lista ou mostrar estados vazios/sem resultados
+            if (items.length === 0) {
+                // Caso 1: Nenhum item na lista
+                emptyState.innerHTML = `
+                    <i class="fas fa-list-check text-4xl text-gray-400 dark:text-gray-500 mb-3"></i>
+                    <p class="text-gray-500 dark:text-gray-400">Nenhum item no checklist ainda.</p>
+                    <p class="text-sm text-gray-400 dark:text-gray-500">Comece adicionando um item acima.</p>`;
+                emptyState.classList.remove('hidden');
+            } else if (filteredItems.length === 0) {
+                // Caso 2: Há itens, mas nenhum corresponde à pesquisa
+                emptyState.innerHTML = `
+                    <i class="fas fa-search text-4xl text-gray-400 dark:text-gray-500 mb-3"></i>
+                    <p class="text-gray-500 dark:text-gray-400">Nenhum item encontrado para sua busca.</p>`;
+                emptyState.classList.remove('hidden');
+            } else {
+                // Caso 3: Renderiza os itens filtrados
+                emptyState.classList.add('hidden');
+                filteredItems.forEach(item => {
+                    const itemElement = document.createElement('div');
+                    itemElement.className = `item-container bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-sm border-l-4 transition ${getItemBorderColor(item.status)}`;
+                    itemElement.dataset.id = item.id;
+
+                    const problemDescriptionHTML = `
+                        <div class="description-area ${item.status === 'not_ok' ? 'visible' : ''} mt-3">
+                            <textarea
+                                class="w-full bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-md p-2 text-sm focus:ring-2 focus:ring-yellow-500 focus:outline-none"
+                                placeholder="Descreva o problema aqui..."
+                                oninput="updateDescription('${item.id}', this.value)"
+                            >${item.problemDescription || ''}</textarea>
+                        </div>`;
+
+                    itemElement.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium flex-grow break-words pr-4">${item.text}</span>
+                            <div class="flex items-center gap-2 flex-shrink-0">
+                                <button class="status-btn ok-btn ${item.status === 'ok' ? 'bg-green-500 text-white' : 'bg-gray-200 dark:bg-gray-600'}" onclick="updateStatus('${item.id}', 'ok')"><i class="fas fa-check"></i></button>
+                                <button class="status-btn not-ok-btn ${item.status === 'not_ok' ? 'bg-red-500 text-white' : 'bg-gray-200 dark:bg-gray-600'}" onclick="updateStatus('${item.id}', 'not_ok')"><i class="fas fa-times"></i></button>
+                                <button class="delete-btn" onclick="deleteItem('${item.id}')"><i class="fas fa-trash-alt"></i></button>
+                            </div>
+                        </div>
+                        ${problemDescriptionHTML}`;
+                    checklistContainer.appendChild(itemElement);
+                });
+            }
+            applyButtonStyles();
+        }
+
+        /**
+         * Adiciona um novo item à lista.
+         */
+        function addItem() {
+            const text = newItemInput.value.trim();
+            if (text === '') {
+                newItemInput.classList.add('ring-2', 'ring-red-500');
+                setTimeout(() => newItemInput.classList.remove('ring-2', 'ring-red-500'), 2000);
+                return;
+            }
+
+            const newItem = {
+                id: Date.now().toString(),
+                text: text,
+                status: 'pending',
+                problemDescription: ''
+            };
+
+            items.unshift(newItem);
+            newItemInput.value = '';
+            saveItems();
+            renderChecklist();
+        }
+
+        /**
+         * Atualiza o status de um item (ok, not_ok).
+         */
+        window.updateStatus = function(id, newStatus) {
+            const item = items.find(i => i.id === id);
+            if (item) {
+                item.status = item.status === newStatus ? 'pending' : newStatus;
+                saveItems();
+                renderChecklist();
+            }
+        }
+
+        /**
+         * Atualiza a descrição do problema de um item.
+         */
+        window.updateDescription = function(id, text) {
+            const item = items.find(i => i.id === id);
+            if (item) {
+                item.problemDescription = text;
+                saveItems();
+            }
+        }
+        
+        /**
+         * Deleta um item da lista.
+         */
+        window.deleteItem = function(id) {
+            if (confirm('Tem certeza que deseja excluir este item?')) {
+                items = items.filter(i => i.id !== id);
+                saveItems();
+                renderChecklist();
+            }
+        }
+
+        /**
+         * Retorna a cor da borda com base no status do item.
+         */
+        function getItemBorderColor(status) {
+            switch (status) {
+                case 'ok': return 'border-green-500';
+                case 'not_ok': return 'border-red-500';
+                default: return 'border-gray-300 dark:border-gray-500';
+            }
+        }
+        
+        /**
+         * Aplica estilos CSS aos botões de status e exclusão.
+         */
+        function applyButtonStyles() {
+            if (document.getElementById('dynamic-btn-styles')) return;
+            const style = document.createElement('style');
+            style.id = 'dynamic-btn-styles';
+            style.textContent = `
+                .status-btn { width: 40px; height: 40px; border-radius: 50%; font-size: 16px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+                .status-btn:hover { transform: scale(1.1); }
+                .delete-btn { color: #9ca3af; background-color: transparent; width: 40px; height: 40px; border-radius: 50%; transition: all 0.2s; }
+                .delete-btn:hover { color: #ef4444; background-color: #fee2e2; }
+                .dark .delete-btn:hover { background-color: #3f3f46; }
+            `;
+            document.head.appendChild(style);
+        }
+
+        /**
+         * Gera o conteúdo HTML para o relatório e aciona a impressão.
+         */
+        function generateAndPrintReport() {
+            const now = new Date();
+            const formattedDate = now.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+            const formattedTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+            let reportHTML = `
+                <div class="text-black">
+                    <h1 class="text-3xl font-bold border-b-2 border-black pb-2">Relatório de Checklist</h1>
+                    <p class="text-md mt-2 mb-6">Gerado em: ${formattedDate} às ${formattedTime}</p>
+                    <div class="space-y-4">
+            `;
+
+            if (items.length === 0) {
+                reportHTML += '<p>Nenhum item para exibir no relatório.</p>';
+            } else {
+                items.forEach(item => {
+                    let statusText, statusClass;
+                    switch (item.status) {
+                        case 'ok': statusText = 'OK'; statusClass = 'print-status-ok'; break;
+                        case 'not_ok': statusText = 'Não OK'; statusClass = 'print-status-not-ok'; break;
+                        default: statusText = 'Pendente'; statusClass = 'print-status-pending'; break;
+                    }
+
+                    reportHTML += `
+                        <div class="report-item border border-gray-300 p-4 rounded-md">
+                            <p class="text-lg font-semibold">${item.text}</p>
+                            <p class="mt-1"><strong>Status:</strong> <span class="print-status ${statusClass}">${statusText}</span></p>
+                            ${item.status === 'not_ok' && item.problemDescription ? 
+                                `<div class="mt-2 pt-2 border-t border-gray-200">
+                                    <p class="font-semibold">Descrição do Problema:</p>
+                                    <p class="text-gray-700 whitespace-pre-wrap">${item.problemDescription}</p>
+                                </div>` 
+                                : ''
+                            }
+                        </div>`;
+                });
+            }
+
+            reportHTML += `
+                    </div>
+                    <footer class="mt-8 pt-4 border-t-2 border-black text-center text-xs text-gray-500">
+                        <p>Relatório gerado por Checklist App - <a href="#" class="print-hidden-link">Link para o App</a></p>
+                    </footer>
+                </div>`;
+            
+            printArea.innerHTML = reportHTML;
+            window.print();
+        }
+
+        // --- Event Listeners ---
+        addItemBtn.addEventListener('click', addItem);
+        newItemInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') addItem(); });
+        printReportBtn.addEventListener('click', generateAndPrintReport);
+        searchInput.addEventListener('input', renderChecklist);
+
+        // Renderiza a lista inicial ao carregar a página
+        document.addEventListener('DOMContentLoaded', renderChecklist);
+    </script>
+</body>
+</html>
+
